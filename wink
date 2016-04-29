@@ -1,0 +1,176 @@
+#!/usr/bin/env ruby
+
+require 'rubygems'
+require 'commander/import'
+require 'typhoeus'
+# require 'pry'
+require 'byebug'
+
+program :name, 'Wink'
+program :version, '0.0.1'
+program :description, 'The wink cli makes it easy to control the lights in your home from the command line.'
+
+# Make sure to run `. ./prepenv.sh` before trying to run these commands
+
+def api_base
+  return 'https://api.wink.com'
+end
+
+def merge_auth(headers)
+  auth = { Authorization: "Bearer #{ENV['WINK_OAUTH_TOKEN']}" }
+  if headers == nil
+    return auth 
+  end
+
+  return headers.merge(auth)
+end
+
+def wink_get(endpoint, headers = nil)
+  headers = merge_auth(headers)
+  resp = Typhoeus.get(api_base + endpoint, headers: headers)
+end
+
+def wink_put(endpoint, body, headers = nil)
+  headers = merge_auth(headers)
+  resp = Typhoeus.put(api_base + endpoint, body: body.to_json, headers: headers)
+end
+
+def extract_data(body)
+  return JSON.parse(body)['data']
+end
+
+def print_all_devices(data)
+  lights = data.select { |l| l.has_key? 'light_bulb_id' }
+  switches = data.select { |s| s.has_key? 'binary_switch_id' }
+  puts "#{switches.length + lights.length} devices total"
+
+  say "Switches:"
+  switches.each {|s| puts "#{s['name']} (#{s['uuid']}): #{s['binary_switch_id']}"}
+
+  say "\nLights:"
+  lights.each {|item| puts "#{item['name']} (#{item['uuid']}): #{item['light_bulb_id']}"}
+end
+
+
+def get_device_id(device_name, options = nil)
+  resp = wink_get('/users/me/wink_devices')
+  data = extract_data(resp.body)
+    
+  result = data.select {|item| item['name'] == device_name }
+
+  if result.length > 0
+    device = result.first
+    return (device['light_bulb_id'] || device['binary_switch_id'])
+  end
+end
+
+
+def switcher(device_id, powered)
+  # byebug
+  return nil if device_id.to_i == 0
+
+  # Ok, good to continue
+  request_body = { desired_state: { powered: powered } } # Message to send to turn light on
+
+  resp = wink_put("/light_bulbs/#{device_id}/desired_state", request_body, { content_type: 'application/json' })
+  if resp.code != 200
+    return { code: resp.code, message: resp.body }
+  end
+
+  return resp.code
+end
+
+def onOrOff?(args)
+  if args.is_a? Array
+    # If the whole args array was passed, proper usage should place the On/Off at Index 1
+    # byebug
+    args = args[0]    
+  end
+
+  if args.downcase == 'on'
+    return true
+  elsif args.downcase == 'off'
+    return false
+  end
+
+  # Something is wrong, create an error
+  raise "Only the values 'On' and 'Off' are allowed"
+end
+
+## --------------------------------------------------------------------------------
+## -----------------------------------COMMANDS-------------------------------------
+## --------------------------------------------------------------------------------
+
+command :devices do |c|
+  c.syntax = 'wink devices'
+  c.summary = 'Show all devices for user'
+  c.description = 'Prints all devices to stdout'
+  c.action do |args, options|
+    resp = wink_get('/users/me/wink_devices')
+    body = extract_data(resp.body)
+    print_all_devices(body)
+  end
+end
+
+
+command :light do |c|
+  c.syntax = 'wink light [options]'
+  c.summary = 'Prints data about the requested light'
+  c.description = 'Prints data about the requested light'
+  c.example 'description', 'command example'
+  c.action do |args, options|
+    resp = wink_get("/light_bulbs/#{args.first}")
+    data = extract_data(resp.body)
+
+    say data
+  end
+end
+
+command :getid do |c|
+  c.syntax = 'wink getid [device_name]'
+  c.summary = 'Get the id of the light matching [device_name]'
+  c.description = 'Sends just the id of the requested light to stdout - useful for piping a light to another command'
+  c.example 'description', 'command example'
+  c.option '--groups', 'Lists groups instead of individual lights'
+  c.action do |args, options|
+    puts get_device_id(args.first, options)
+  end
+end
+
+command :switch do |c|
+  c.syntax = 'wink on [options]'
+  c.summary = ''
+  c.description = ''
+  c.example 'description', 'command example'
+  c.option '--some-switch', 'Some switch that does something'
+  c.action do |args, options|
+    # byebug
+    # User can pass either a device id or a device name so we have to determine which one was passed in
+    device = args[1].to_i == 0 ? get_device_id(args[1]) : args[1] # to_i will return 0 if it can't make sense of a number in string form
+    action = onOrOff?(args.first)
+    result = switcher(device, action)
+
+    if result == nil
+      say 'An error occurred.'
+    elsif result.is_a? Fixnum and result == 200
+      say 'Success'
+    else
+      say 'An error occurred: '
+      say "Code; #{result[:code]}"
+      say "Msg: #{result[:message]}"
+    end
+    
+  end
+end
+
+command :set do |c|
+  c.syntax = 'wink set [options]'
+  c.summary = ''
+  c.description = ''
+  c.example 'description', 'command example'
+  c.option '--some-switch', 'Some switch that does something'
+  c.action do |args, options|
+    # Do something or c.when_called Wink-cli::Commands::Set
+  end
+end
+
