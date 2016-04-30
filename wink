@@ -6,6 +6,8 @@ require 'typhoeus'
 # require 'pry'
 require 'byebug'
 
+require_relative 'wink_api'
+
 program :name, 'Wink'
 program :version, '0.0.1'
 program :description, 'The wink cli makes it easy to control the lights in your home from the command line.'
