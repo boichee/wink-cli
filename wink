@@ -6,7 +6,10 @@ require 'typhoeus'
 # require 'pry'
 require 'byebug'
 
-require_relative 'wink_api'
+# require_relative 'wink_api'
+require_relative './lib/wink/user'
+require_relative './lib/wink/lights'
+require_relative './lib/wink/switches'
 
 program :name, 'Wink'
 program :version, '0.0.1'
@@ -21,7 +24,7 @@ end
 def merge_auth(headers)
   auth = { Authorization: "Bearer #{ENV['WINK_OAUTH_TOKEN']}" }
   if headers == nil
-    return auth 
+    return auth
   end
 
   return headers.merge(auth)
@@ -57,7 +60,7 @@ end
 def get_device_id(device_name, options = nil)
   resp = wink_get('/users/me/wink_devices')
   data = extract_data(resp.body)
-    
+
   result = data.select {|item| item['name'] == device_name }
 
   if result.length > 0
@@ -86,7 +89,7 @@ def onOrOff?(args)
   if args.is_a? Array
     # If the whole args array was passed, proper usage should place the On/Off at Index 1
     # byebug
-    args = args[0]    
+    args = args[0]
   end
 
   if args.downcase == 'on'
@@ -111,6 +114,61 @@ command :devices do |c|
     resp = wink_get('/users/me/wink_devices')
     body = extract_data(resp.body)
     print_all_devices(body)
+  end
+end
+
+
+command :switches do |c|
+  c.syntax = 'wink switches'
+  c.summary = 'Show all switches for user'
+  c.description = 'Prints all devices to stdout'
+  c.action do |args, options|
+    user = User.new(1, 2)
+    switches = user.get_switches
+    # resp = wink_get('/users/me/wink_devices')
+    # body = extract_data(resp.body)
+    # print_all_devices(body)
+
+    switches.each { |switch| switch.print }
+
+    say Switch.all
+  end
+end
+
+command :change do |c|
+  c.syntax = 'wink change <device name> <on|off>'
+  c.summary = 'Change the state of a device'
+  c.action do |args, options|
+
+    # First we get the args the user passed
+    device_name = args.first
+
+    case args[1].downcase
+    when 'on'
+      device_powered = true
+    when 'off'
+      device_powered = false
+    end
+
+    u = User.new(1, 2)
+    device = u.get_device device_name
+
+
+
+    # Note right now this only does switches, but really we should check to see if args.first is 'switch' or 'light'
+    # light = Light.get_from_api device_name
+    # puts light.print
+
+    begin
+      if device_powered
+        device.on
+      else
+        device.off
+      end
+    rescue RuntimeError => e
+      say "Error: #{e.message}"
+    end
+
   end
 end
 
@@ -161,7 +219,7 @@ command :switch do |c|
       say "Code; #{result[:code]}"
       say "Msg: #{result[:message]}"
     end
-    
+
   end
 end
 
@@ -175,4 +233,3 @@ command :set do |c|
     # Do something or c.when_called Wink-cli::Commands::Set
   end
 end
-
